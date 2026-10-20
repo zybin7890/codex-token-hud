@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex Dashboard Fixture</title>
+<style>
+  :root{color-scheme:light dark;font:14px/1.55 system-ui,sans-serif;--color-background:#fafafa;--color-text:#282828}
+  body{margin:0;background:#f0f0f0;color:var(--color-text)}main{max-width:820px;margin:0 auto;padding:26px 22px 40px}
+  h1{font-size:18px;font-weight:600;margin:0 0 5px}p{margin:0 0 18px;color:#6b6b6b;font-size:12px}
+  nav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}button{font:inherit;color:inherit;background:#fff;border:1px solid #d8d8d8;border-radius:7px;padding:6px 10px;cursor:pointer}
+  .transcript{min-height:265px;display:flex;align-items:flex-start;padding:12px 0}.sample{max-width:460px}.sample strong{display:block;margin-bottom:8px;font-size:13px}
+  .composer{border:1px solid #d1d1d1;background:var(--color-background);border-radius:18px;padding:12px 10px 8px;box-shadow:0 2px 9px #00000005;min-width:0}
+  [data-codex-composer]{outline:none;min-height:60px;padding:5px 4px;font-size:14px}.actions{display:flex;align-items:center;justify-content:space-between;padding:4px;color:#727272;font-size:12px}.send{font-size:18px;border:0;background:#e4e4e4;border-radius:50%;width:31px;height:31px;padding:0}
+  .caption{font-size:11px;margin-top:15px;color:#818181}
+  @media(prefers-color-scheme:dark){:root{--color-background:#252525;--color-text:#eaeaea}body{background:#1b1b1b}button{background:#292929;border-color:#454545}p,.caption{color:#a7a7a7}.composer{border-color:#454545}.send{background:#474747}.actions{color:#aaa}}
+  @media(max-width:440px){main{padding:18px 14px 30px}.transcript{min-height:265px}nav{gap:5px}nav button{font-size:11px;padding:6px 8px}}
+</style>
+<main>
+  <h1>Codex Dashboard</h1>
+  <p>独立渲染 fixture · 演示聊天框旁的薄层统计组件，所有数字均为虚构样例。</p>
+  <nav>
+    <button type="button" onclick="fixture.switchTo('a')">会话 A</button>
+    <button type="button" onclick="fixture.switchTo('b')">会话 B</button>
+    <button type="button" onclick="fixture.unknown()">未知额度</button>
+    <button type="button" onclick="fixture.remount()">重挂载</button>
+  </nav>
+  <section class="transcript"><div class="sample"><strong>示例会话</strong>统计条跟随当前聊天框。缓存读取与总 Token 来自 Token 事件；额度属于账号共享状态。悬停或点击额度可查看各窗口。</div></section>
+  <div id="surface"></div>
+  <div class="caption">布局使用实际源码确认的 data-codex-composer-root 标记；此页不接入 Codex 账号、服务或对话。</div>
+</main>
+<script>
+  const ids = {a: '11111111-1111-4111-8111-111111111111', b: '22222222-2222-4222-8222-222222222222'};
+  const samples = {
+    a: {total: {inputTokens: 18400, cachedInputTokens: 13800, outputTokens: 2600, reasoningOutputTokens: 1100, totalTokens: 21000}, last: {inputTokens: 9200, cachedInputTokens: 7100, outputTokens: 1100, reasoningOutputTokens: 400, totalTokens: 10300}, contextWindow: 128000, timestamp: '2026-01-01T01:02:03Z'},
+    b: {total: {inputTokens: 8000, cachedInputTokens: 2400, outputTokens: 2000, reasoningOutputTokens: 400, totalTokens: 10000}, last: {inputTokens: 3600, cachedInputTokens: 1800, outputTokens: 400, reasoningOutputTokens: 100, totalTokens: 4000}, contextWindow: 128000, timestamp: '2026-01-01T01:02:04Z'}
+  };
+  function quotaSample() { return {updatedAt: Math.floor(Date.now()/1000), pools: [{id: 'codex', name: 'Codex', plan: 'Plus', ordinaryUsageAllowed: true, primary: {usedPercent: 24, remainingPercent: 76, windowDurationMins: 300, resetsAt: Math.floor(Date.now()/1000)+7200}, secondary: {usedPercent: 68, remainingPercent: 32, windowDurationMins: 10080, resetsAt: Math.floor(Date.now()/1000)+259200}}]}; }
+  function composerElement() {
+    const root = document.createElement('div'); root.className = 'composer';
+    root.setAttribute('data-codex-composer-root', ''); root.setAttribute('data-composer-placement', 'thread');
+    root.innerHTML = '<div data-codex-composer contenteditable="true" role="textbox" aria-label="消息">输入示例消息…</div><div class="actions"><span>＋ &nbsp; GPT · 本地</span><button class="send" type="button" aria-label="发送示例">↑</button></div>';
+    return root;
+  }
+  let current = 'a';
+  window.fixture = {
+    ids, samples, quotaSample, composerElement,
+    switchTo(key, publish = true) {current = key; history.pushState({}, '', '/local/' + ids[key]); document.querySelector('#surface').replaceChildren(composerElement()); if (window.__codexDashboard) {window.__codexDashboard.state(); if (publish) window.__codexDashboard.update({conversationId: ids[key], usage: samples[key], quotas: quotaSample()});}},
+    unknown() {window.__codexDashboard.update({conversationId: ids[current], usage: {total: null, last: null, contextWindow: null}, quotas: {updatedAt: null, pools: [{id: 'codex', name: 'Codex', primary: null, secondary: null, ordinaryUsageAllowed: null}]}});},
+    remount() {document.querySelector('#surface').replaceChildren(composerElement()); window.__codexDashboard.state(); window.__codexDashboard.update({conversationId: ids[current], usage: samples[current], quotas: quotaSample()});}
+  };
+  document.querySelector('#surface').append(composerElement());
+</script>
+<script src="inline.js"></script>
+<script>fixture.switchTo('a');</script>
+</html>

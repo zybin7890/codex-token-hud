@@ -1,0 +1,6 @@
+build/
+work/
+*.exe
+*.zip
+widget/installed-*.png
+widget/live-*.png
