@@ -18,9 +18,9 @@ function Get-CodexAppExecutable {
     }
     $package = Get-AppxPackage -Name OpenAI.Codex | Select-Object -First 1
     if ($package) {
-        $p1 = Join-Path $package.InstallLocation 'app\Codex.exe'
+        $p1 = Join-Path $package.InstallLocation 'app\ChatGPT.exe'
         if (Test-Path -LiteralPath $p1 -PathType Leaf) { return $p1 }
-        $p2 = Join-Path $package.InstallLocation 'app\ChatGPT.exe'
+        $p2 = Join-Path $package.InstallLocation 'app\Codex.exe'
         if (Test-Path -LiteralPath $p2 -PathType Leaf) { return $p2 }
     }
     $known = @(
@@ -42,6 +42,23 @@ function Get-RunningCodex {
 
 function Install-Dashboard {
     param([string]$Target)
+    $launcher = Join-Path $PSScriptRoot 'codex-launcher.exe'
+    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'codex-dashboard.exe') -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'widget\inline.js') -PathType Leaf)) {
+        throw '缺少启动器、采集器或微件，请使用完整便携包。'
+    }
+    $links = @(
+        (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Codex.lnk'),
+        (Join-Path ([Environment]::GetFolderPath('Programs')) 'Codex.lnk')
+    )
+    $shell = New-Object -ComObject WScript.Shell
+    $targetLauncher = Join-Path $Target 'codex-launcher.exe'
+    foreach ($path in $links) {
+        if ((Test-Path -LiteralPath $path) -and $shell.CreateShortcut($path).TargetPath -ne $targetLauncher) {
+            throw "已有其他 Codex 入口，未覆盖：$path"
+        }
+    }
     Write-Host "正在安装 Codex Dashboard 到 $Target ..."
     if (-not (Test-Path -LiteralPath $Target)) {
         New-Item -ItemType Directory -Path $Target -Force | Out-Null
@@ -51,6 +68,7 @@ function Install-Dashboard {
     if (Test-Path -LiteralPath $exe) {
         Copy-Item -LiteralPath $exe -Destination (Join-Path $Target 'codex-dashboard.exe') -Force
     }
+    Copy-Item -LiteralPath $launcher -Destination $targetLauncher -Force
     $widgetDir = Join-Path $sourceDir 'widget'
     if (Test-Path -LiteralPath $widgetDir) {
         $targetWidget = Join-Path $Target 'widget'
@@ -71,7 +89,18 @@ function Install-Dashboard {
     Set-Content -LiteralPath (Join-Path $Target 'start.cmd') -Value $startCmd -Encoding utf8
     Set-Content -LiteralPath (Join-Path $Target 'stop.cmd') -Value $stopCmd -Encoding utf8
 
+    $app = Get-CodexAppExecutable -ExplicitPath $CodexAppPath
+    foreach ($path in $links) {
+        $link = $shell.CreateShortcut($path)
+        $link.TargetPath = $targetLauncher
+        $link.WorkingDirectory = $Target
+        $link.Description = 'Codex'
+        if ($app) { $link.IconLocation = "$app,0" }
+        $link.Save()
+    }
+
     Write-Host "安装完成！安装路径：$Target"
+    Write-Host '桌面与开始菜单的 Codex 入口会静默挂载状态栏；关闭后不会自动重开。'
     Write-Host "常用命令："
     Write-Host "  启动 / 挂载：     pwsh $Target\Start-Codex-Dashboard.ps1"
     Write-Host "  守护自动重启：    pwsh $Target\Start-Codex-Dashboard.ps1 -Watchdog"

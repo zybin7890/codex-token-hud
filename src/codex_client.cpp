@@ -175,7 +175,7 @@ bool CodexClient::start(const std::atomic_bool& stop, std::wstring& error) {
     ResumeThread(process.hThread);
     CloseHandle(process.hThread);
     std::string reply;
-    if (!write("{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex_pulse\",\"version\":\"0.1.0\"},\"capabilities\":{\"experimentalApi\":false}}}\n") ||
+    if (!write("{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex_pulse\",\"version\":\"0.1.1\"},\"capabilities\":{\"experimentalApi\":false}}}\n") ||
         !response(1, reply, stop) || !pulse_response_ok(reply.data(), reply.size()) ||
         !write("{\"method\":\"initialized\"}\n")) {
         close(); error = L"Codex 接口初始化失败或超时，请确认 CLI 支持 app-server。"; return false;

@@ -100,13 +100,14 @@ bool allowed_target(const Json& target,bool preview) {
 }
 struct Target {std::string websocket;std::unique_ptr<CdpClient> client;SessionReader reader;};
 void help() {
-    std::cout<<"Codex Dashboard 0.1.0 - native C23/C++23 collector + inline renderer\n"
+    std::cout<<"Codex Dashboard 0.1.1 - native C23/C++23 collector + inline renderer\n"
              <<"  --attach                  Attach beside Codex's chat composer (default)\n"
              <<"  --cdp-port <1..65535>      Use an existing loopback debugger\n"
              <<"  --profile <directory>     Read DevToolsActivePort from this profile\n"
              <<"  --stop                    Remove the widget and stop this sidecar\n"
              <<"  --status                  Verify live widgets and debugger port\n"
              <<"  --launch                  Activate the registered desktop with debug flags\n"
+             <<"  --desktop-pid <pid>       Exit when this desktop process closes\n"
              <<"  --once                    Read live quotas as sanitized JSON and exit\n"
              <<"  --session <rollout.jsonl>  Also read this explicit session\n"
              <<"  --codex <codex.exe>        Use a specific native Codex CLI\n"
@@ -121,7 +122,7 @@ int wmain(int argc,wchar_t** argv) {
     std::wstring cli,home;
     std::filesystem::path session,profile=std::filesystem::path(env(L"APPDATA"))/L"Codex"/L"web"/L"Codex";
     std::filesystem::path widget=executable_dir()/L"widget"/L"inline.js";
-    bool once=false,stop=false,preview=false,status=false,launch=false;uint16_t port=0;
+    bool once=false,stop=false,preview=false,status=false,launch=false;uint16_t port=0;DWORD desktop_pid=0;
     for(int i=1;i<argc;++i) {
         std::wstring arg=argv[i];
         if(arg==L"--help"||arg==L"-h"){help();return 0;}
@@ -131,10 +132,17 @@ int wmain(int argc,wchar_t** argv) {
         else if(arg==L"--stop")stop=true;
         else if(arg==L"--preview")preview=true;
         else if(arg==L"--attach"){}
-        else if(arg==L"--codex"||arg==L"--session"||arg==L"--profile"||arg==L"--cdp-port"||arg==L"--widget"||arg==L"--codex-home") {
+        else if(arg==L"--codex"||arg==L"--session"||arg==L"--profile"||arg==L"--cdp-port"||arg==L"--widget"||arg==L"--codex-home"||arg==L"--desktop-pid") {
             if(++i>=argc){help();return 2;}
             if(arg==L"--codex")cli=argv[i];else if(arg==L"--session")session=argv[i];else if(arg==L"--profile")profile=argv[i];
             else if(arg==L"--widget")widget=argv[i];else if(arg==L"--codex-home")home=argv[i];
+            else if(arg==L"--desktop-pid") {
+                std::wstring value=argv[i];unsigned long long parsed=0;
+                if(value.empty()||value.size()>10||value.find_first_not_of(L"0123456789")!=std::wstring::npos){std::cerr<<"Invalid desktop process ID.\n";return 2;}
+                parsed=std::stoull(value);
+                if(!parsed||parsed>MAXDWORD){std::cerr<<"Invalid desktop process ID.\n";return 2;}
+                desktop_pid=static_cast<DWORD>(parsed);
+            }
             else {port=port_value(argv[i]);if(!port){std::cerr<<"Invalid debugger port.\n";return 2;}}
         } else {help();return 2;}
     }
@@ -166,6 +174,12 @@ int wmain(int argc,wchar_t** argv) {
             if(!event){std::cout<<"No dashboard sidecar is running on this port.\n";return 0;}
             SetEvent(event);CloseHandle(event);return 0;
         }
+        struct DesktopHandle {HANDLE value=nullptr;~DesktopHandle(){if(value)CloseHandle(value);}} desktop;
+        if(desktop_pid) {
+            desktop.value=OpenProcess(SYNCHRONIZE,FALSE,desktop_pid);
+            if(!desktop.value)throw std::runtime_error("Desktop process is no longer available.");
+            if(WaitForSingleObject(desktop.value,0)!=WAIT_TIMEOUT)return 0;
+        }
         std::wstring mutex_name=L"Local\\CodexDashboard_"+std::to_wstring(port);
         HANDLE mutex=CreateMutexW(nullptr,FALSE,mutex_name.c_str());
         if(!mutex)throw std::runtime_error("Cannot create the sidecar ownership lock.");
@@ -173,8 +187,9 @@ int wmain(int argc,wchar_t** argv) {
         HANDLE event=CreateEventW(nullptr,TRUE,FALSE,event_name.c_str());
         if(!event){CloseHandle(mutex);throw std::runtime_error("Cannot create the sidecar stop event.");}
         std::string source=read_widget(widget);
-        std::jthread cancellation([event](std::stop_token token) {
-            while(!token.stop_requested())if(WaitForSingleObject(event,100)==WAIT_OBJECT_0){interrupted=true;break;}
+        std::jthread cancellation([event,process=desktop.value](std::stop_token token) {
+            while(!token.stop_requested())if(WaitForSingleObject(event,100)==WAIT_OBJECT_0 ||
+                (process && WaitForSingleObject(process,0)!=WAIT_TIMEOUT)){interrupted=true;break;}
         });
         std::vector<Target> targets;
         FetchResult quotas;int64_t quota_time=-1;ULONGLONG queried=0,discovered=0;
